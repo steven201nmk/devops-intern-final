@@ -9,7 +9,7 @@ variable "app_tag" {
   description = "Image tag to deploy: the full git commit SHA pushed to GHCR by CI."
 
   validation {
-    condition     = var.app_tag != "latest" && length(var.app_tag) > 0
+    condition     = var.app_tag != "latest" && var.app_tag != ""
     error_message = "Deploy an immutable commit-SHA tag, not \"latest\"."
   }
 }
