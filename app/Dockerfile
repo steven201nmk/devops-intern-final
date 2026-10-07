@@ -1,4 +1,4 @@
-﻿FROM nginx:1.27-alpine
+FROM nginx:1.27-alpine
 
 ARG BUILD_SHA=unknown
 ENV BUILD_SHA=$BUILD_SHA

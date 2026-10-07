@@ -1,4 +1,4 @@
-﻿# Loki Log Aggregation Setup
+# Loki Log Aggregation Setup
 
 ## Starting the Stack
 The stack was initiated using docker-compose:
