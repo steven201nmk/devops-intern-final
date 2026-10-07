@@ -525,7 +525,7 @@ Open <http://localhost:3000> and go to **Connections → Data sources → Add da
 **LogQL queries**
 
 ```logql
-# Q1 - every NGINX access-log line
+# Q1 - everything NGINX wrote to stdout (start-up messages + access log)
 {job="nginx-app", stream="stdout"}
 
 # Q2 - only non-2xx responses: isolates the 404s from the missing path
@@ -533,17 +533,18 @@ Open <http://localhost:3000> and go to **Connections → Data sources → Add da
 
 # Q3 - the same, but parsing each line into fields first
 {job="nginx-app", stream="stdout"}
+  |= "HTTP/"
   | pattern `<ip> - <_> [<_>] "<method> <path> <_>" <status> <_>`
   | status != "200"
 
 # Q4 - requests per status code over the last 10 minutes
 sum by (status) (
-  count_over_time({job="nginx-app", stream="stdout"}
+  count_over_time({job="nginx-app", stream="stdout"} |= "HTTP/"
     | pattern `<ip> - <_> [<_>] "<method> <path> <_>" <status> <_>` [10m])
 )
 ```
 
-`stream="stdout"` keeps NGINX's stderr error lines (`open() ... failed`) out of the results.
+`stream="stdout"` keeps NGINX's error log (stderr) out. `|= "HTTP/"` keeps only access-log lines. The official image also prints its `/docker-entrypoint.sh: ...` start-up messages to stdout. Those lines don't match the pattern, so their `status` label comes out empty, and `status != "200"` would count them as matches.
 
 **Results**
 

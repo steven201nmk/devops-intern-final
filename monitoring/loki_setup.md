@@ -66,7 +66,7 @@ done
 ## 4. LogQL queries
 
 ```logql
-# Q1 - every NGINX access-log line
+# Q1 - everything NGINX wrote to stdout (start-up messages + access log)
 {job="nginx-app", stream="stdout"}
 
 # Q2 - only non-2xx responses (line filter on the status field of the "combined" log format)
@@ -74,17 +74,18 @@ done
 
 # Q3 - the same, but parsing the line into fields first
 {job="nginx-app", stream="stdout"}
+  |= "HTTP/"
   | pattern `<ip> - <_> [<_>] "<method> <path> <_>" <status> <_>`
   | status != "200"
 
 # Q4 - number of requests per status code over the last 10 minutes
 sum by (status) (
-  count_over_time({job="nginx-app", stream="stdout"}
+  count_over_time({job="nginx-app", stream="stdout"} |= "HTTP/"
     | pattern `<ip> - <_> [<_>] "<method> <path> <_>" <status> <_>` [10m])
 )
 ```
 
-`stream="stdout"` matters. For every 404, NGINX also writes an `open() ... failed (2: No such file or directory)` line to stderr. That line doesn't match the pattern, so without the stream selector Q3 would return it too.
+`stream="stdout"` keeps NGINX's error log (stderr) out. `|= "HTTP/"` keeps only access-log lines. The official image also prints its `/docker-entrypoint.sh: ...` start-up messages to stdout. Those lines don't match the pattern, so their `status` label comes out empty, and `status != "200"` would count them as matches.
 
 ## 5. Results
 
