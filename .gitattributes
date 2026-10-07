@@ -1,0 +1,9 @@
+# Always store and check out text files with LF line endings, so scripts and
+# configs edited on Windows still work inside Linux containers and CI.
+* text=auto eol=lf
+
+# Binary files are never converted.
+*.png binary
+*.jpg binary
+*.gif binary
+*.exe binary

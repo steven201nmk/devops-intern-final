@@ -13,3 +13,7 @@ node_modules/
 # Secrets or local configuration
 .env
 *.pem
+
+# Local tool binaries (nomad.exe, consul.exe and their licence file)
+*.exe
+/LICENSE.txt
