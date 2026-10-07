@@ -1,3 +1,5 @@
+# Single-binary Loki for local use: one replica, filesystem storage,
+# in-memory ring, no multi-tenancy.
 auth_enabled: false
 
 server:
@@ -24,3 +26,7 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+
+# Don't send anonymous usage statistics to Grafana Labs.
+analytics:
+  reporting_enabled: false
