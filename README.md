@@ -76,17 +76,29 @@ Every stage consumes the output of the one before it. A commit to `main` is lint
 
 ## Prerequisites
 
-Tested on: TODO (for example, Ubuntu 24.04 under WSL2)
+Tested on: Windows 11 with WSL 2, running **Ubuntu 24.04.5 LTS** (kernel `6.6.87.2-microsoft-standard-WSL2`) and Docker Desktop with WSL integration.
 
 | Tool | Version used | Check with |
 |---|---|---|
-| Docker Engine | TODO | `docker version` |
-| Docker Compose (v2 plugin) | TODO | `docker compose version` |
-| HashiCorp Nomad | TODO | `nomad version` |
-| HashiCorp Consul | TODO | `consul version` |
-| ShellCheck | TODO | `shellcheck --version` |
-| hadolint | TODO | `hadolint --version` |
-| git, curl | any recent | `git --version`, `curl --version` |
+| Docker Engine | 29.8.0 | `docker version` |
+| Docker Compose | v5.5.1 | `docker compose version` |
+| HashiCorp Nomad | v2.0.7 | `nomad version` |
+| HashiCorp Consul | v2.0.4 | `consul version` |
+| ShellCheck | 0.9.0 | `shellcheck --version` |
+| hadolint | 2.12.0 | `hadolint --version` |
+| git | 2.43.0 | `git --version` |
+
+**Installing the tools on Ubuntu 24.04** (Docker comes from Docker Desktop or Docker Engine):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y gpg lsb-release wget curl shellcheck
+wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update && sudo apt-get install -y nomad consul
+sudo wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+sudo chmod +x /usr/local/bin/hadolint
+```
 
 ---
 
@@ -144,7 +156,7 @@ devops-intern-final/
 **Workflow used**
 
 - All changes are made on `feature/*` branches and merged to `main` through a pull request with a short description.
-  - Merged PR: TODO: link, for example `https://github.com/steven201nmk/devops-intern-final/pull/1`
+  - Merged PR: [#1 fix: bring the pipeline in line with the assessment brief](https://github.com/steven201nmk/devops-intern-final/pull/1), merged with a merge commit so the individual commits stay in the history
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `ci:`.
 - IDE metadata (`.idea/`, `.vscode/`), build artefacts and local secrets (`.env`, `*.pem`) are excluded by `.gitignore`.
 - The final state is tagged `v1.0.0`.
@@ -188,7 +200,12 @@ git ls-files -s scripts/          # mode 100755 means executable in Git
 ```
 
 ```text
-TODO: paste output
+$ shellcheck scripts/*.sh && echo 'ShellCheck: no issues'
+ShellCheck: no issues
+
+$ git ls-files -s scripts/
+100755 36263a25a0c575c18787de634d42efff95c5d0c8 0       scripts/healthcheck.sh
+100755 201b76ed8cc584c61fec2bbd3957c7118afb326f 0       scripts/sysinfo.sh
 ```
 
 **`sysinfo.sh`**
@@ -198,7 +215,30 @@ TODO: paste output
 ```
 
 ```text
-TODO: paste output
+$ ./scripts/sysinfo.sh
+
+== User ==
+User:            steven
+Effective UID:   1000
+
+== Host ==
+Hostname:        Steven
+Kernel release:  6.6.87.2-microsoft-standard-WSL2
+
+== Date (ISO-8601, UTC) ==
+2026-10-07T05:29:24Z
+
+== Disk usage (/) ==
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdf       1007G  2.4G  954G   1% /
+
+== Memory usage ==
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       1.1Gi        12Gi        49Mi       2.4Gi        14Gi
+Swap:          4.0Gi          0B       4.0Gi
+
+== Docker daemon ==
+Status: running (server version 29.8.0)
 ```
 
 **`healthcheck.sh`, success and failure cases**
@@ -211,8 +251,28 @@ TODO: paste output
 ```
 
 ```text
-TODO: paste output
+$ ./scripts/healthcheck.sh; echo "exit=$?"
+Checking http://localhost:8080 ...
+OK: http://localhost:8080 returned HTTP 200
+exit=0
+
+$ ./scripts/healthcheck.sh http://localhost:8080/healthz; echo "exit=$?"
+Checking http://localhost:8080/healthz ...
+OK: http://localhost:8080/healthz returned HTTP 200
+exit=0
+
+$ ./scripts/healthcheck.sh http://localhost:8080/missing; echo "exit=$?"
+Checking http://localhost:8080/missing ...
+FAIL: http://localhost:8080/missing returned HTTP 404, expected 200
+exit=1
+
+$ ./scripts/healthcheck.sh http://localhost:9999; echo "exit=$?"
+Checking http://localhost:9999 ...
+FAIL: http://localhost:9999 is unreachable (no HTTP response within 5s)
+exit=2
 ```
+
+The four cases return the four documented outcomes: `0` for a 200, `1` for a 404, and `2` when nothing is listening.
 
 ---
 
@@ -225,30 +285,82 @@ TODO: paste output
 | Non-root runtime | `USER nginx` (UID 101). The PID file and temp paths are moved to `/tmp` so NGINX can start without root |
 | `EXPOSE` and `HEALTHCHECK` | `EXPOSE 8080`, and the `HEALTHCHECK` curls `/healthz` every 10 s |
 | Build identifier | `ARG BUILD_SHA` is written into `index.html` at build time and recorded as the `org.opencontainers.image.revision` label |
-| Image under 60 MB | TODO MB (see `docker images` below) |
+| Image under 60 MB | **52.7 MB** unpacked (sum of all layers) and **21 MB** compressed in the registry. See the note below |
 
 **Build and run**
 
 ```bash
 docker build --build-arg BUILD_SHA="$(git rev-parse --short HEAD)" -t nginx-app:local ./app
 docker images nginx-app:local
+docker history nginx-app:local --format '{{.Size}}' | awk '/kB$/{s+=$1/1000} /MB$/{s+=$1} /GB$/{s+=$1*1000} END{printf "Sum of uncompressed layers: %.1f MB\n", s}'
 docker run -d --name nginx-app -p 8080:8080 nginx-app:local
 ```
 
 ```text
-TODO: paste output (including the SIZE column)
+$ docker build --build-arg BUILD_SHA="$(git rev-parse --short HEAD)" -t nginx-app:local ./app 2>&1 | tail -n 4
+#10 exporting manifest list sha256:9e06876a8da26a24db48c1702b77666ab7a61140bcd4d09d25637518d3ef27b3 0.0s done
+#10 naming to docker.io/library/nginx-app:local done
+#10 unpacking to docker.io/library/nginx-app:local done
+#10 DONE 0.1s
+
+$ docker images nginx-app:local
+IMAGE             ID             DISK USAGE   CONTENT SIZE   EXTRA
+nginx-app:local   9e06876a8da2       73.7MB           21MB
+
+$ docker history nginx-app:local --format '{{.Size}}' | awk '/kB$/{s+=$1/1000} /MB$/{s+=$1} /GB$/{s+=$1*1000} END{printf "Sum of uncompressed layers: %.1f MB\n", s}'
+Sum of uncompressed layers: 52.7 MB
+
+$ docker run -d --name nginx-app -p 8080:8080 nginx-app:local
+a080a3f83ad220607edf4adb68bea0a3859ec5b7655e94817146ad6bf085d814
 ```
+
+**About the image size.** Docker 29 uses the containerd image store by default. Its `DISK USAGE` column adds the unpacked layers (52.7 MB) and the compressed download (21 MB, the `CONTENT SIZE`) together, which gives 73.7 MB. The image itself is the sum of its layers: **52.7 MB**, which is under the 60 MB limit. About 52.6 MB of that is the `nginx:1.27-alpine` base, and my own layers add about 110 kB. On the classic storage driver, `docker images` reports the same image as roughly 52.7 MB.
 
 **Serving traffic**
 
 ```bash
-curl -i http://localhost:8080/
-curl -i http://localhost:8080/healthz
+curl -si http://localhost:8080/
+curl -si http://localhost:8080/healthz
 ```
 
 ```text
-TODO: paste output
+$ curl -si http://localhost:8080/
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Date: Wed, 07 Oct 2026 05:29:24 GMT
+Content-Type: text/html
+Content-Length: 332
+Last-Modified: Wed, 07 Oct 2026 05:05:28 GMT
+Connection: keep-alive
+ETag: "6ac5d318-14c"
+Accept-Ranges: bytes
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DevOps Intern Final Assessment</title>
+</head>
+<body>
+    <h1>DevOps Intern Final Assessment</h1>
+    <p><strong>Name:</strong> Nyi Min Khant</p>
+    <p><strong>Date:</strong> 2026-09-18</p>
+    <p><strong>Build SHA:</strong> 919ac5e</p>
+</body>
+</html>
+
+$ curl -si http://localhost:8080/healthz
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Date: Wed, 07 Oct 2026 05:29:24 GMT
+Content-Type: text/plain
+Content-Length: 3
+Connection: keep-alive
+
+OK
 ```
+
+The page shows the build SHA (`919ac5e`, the commit the image was built from), and `/healthz` returns a plain-text `OK` with a single `Content-Type` header.
 
 **Non-root and health status**
 
@@ -259,7 +371,14 @@ docker inspect --format '{{.State.Health.Status}}' nginx-app
 ```
 
 ```text
-TODO: paste output
+$ hadolint app/Dockerfile && echo 'hadolint: no issues'
+hadolint: no issues
+
+$ docker exec nginx-app id
+uid=101(nginx) gid=101(nginx) groups=101(nginx)
+
+$ docker inspect --format '{{.State.Health.Status}}' nginx-app
+healthy
 ```
 
 ![Application page showing name, date and build SHA](docs/screenshots/app-browser.png)
@@ -285,8 +404,9 @@ TODO: paste output
 
 **Evidence**
 
-- Green run on `main`: TODO: link to the run
-- Published image tags: TODO: list the SHA tag and `latest`
+- Green run on `main` for the PR #1 merge commit, with all four jobs passing: [actions/runs/37572533810](https://github.com/steven201nmk/devops-intern-final/actions/runs/37572533810)
+- The same pipeline on the pull request, where `publish` is correctly skipped: [actions/runs/37571368003](https://github.com/steven201nmk/devops-intern-final/actions/runs/37571368003)
+- Published image tags: `919ac5e323e691915bc3b8b0dcb9627f45012ee5` (the merge commit) and `latest`
 
 ```bash
 docker pull ghcr.io/steven201nmk/devops-intern-final/nginx-app:<git-sha>
@@ -460,6 +580,16 @@ These are failures I actually hit while building this project, in the order they
 - **Symptom:** TODO: paste the error, for example `open() "/var/run/nginx.pid" failed (13: Permission denied)`
 - **Cause:** By default NGINX writes its PID file and temp files to root-owned paths and listens on port 80, which a non-root user cannot bind.
 - **Fix:** Moved `pid` and every `*_temp_path` to `/tmp`, set `listen 8080`, and `chown`ed the cache and log directories to `nginx`. Updated the CI test job to map port `8080:8080`. See commits [`1a8fb67`](https://github.com/steven201nmk/devops-intern-final/commit/1a8fb67), [`67fc5d9`](https://github.com/steven201nmk/devops-intern-final/commit/67fc5d9) and [`998c660`](https://github.com/steven201nmk/devops-intern-final/commit/998c660).
+
+### 5. Port 8080 was already taken on my Windows machine
+
+- **Symptom:** `docker run -p 8080:8080` failed with:
+  ```text
+  docker: Error response from daemon: ports are not available: exposing port TCP 0.0.0.0:8080 -> 127.0.0.1:0: /forwards/expose returned unexpected status: 500
+  ```
+  Then `curl` and `healthcheck.sh` reported the app as unreachable (exit code `2`).
+- **Cause:** Docker Desktop publishes container ports on the Windows host, and something on Windows was already listening on 8080. `netstat -ano | findstr :8080` pointed to PID 6000. `Get-CimInstance Win32_Service -Filter "ProcessId=6000"` showed it was **MTAgentService**, the background agent of the MiniTool ShadowMaker backup tool.
+- **Fix:** Stopped the service while testing (`Set-Service MTAgentService -StartupType Disabled; Stop-Service MTAgentService`) and re-enabled it afterwards. CI and Nomad were never affected: the CI runner has nothing on 8080, and Nomad uses a dynamically allocated host port.
 
 ---
 
