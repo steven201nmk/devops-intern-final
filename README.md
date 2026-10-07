@@ -6,7 +6,7 @@
 |---|---|
 | **Name** | Nyi Min Khant |
 | **GitHub** | [@steven201nmk](https://github.com/steven201nmk) |
-| **Submission date** | TODO: YYYY-MM-DD |
+| **Submission date** | 2026-10-07 |
 | **Release tag** | [`v1.0.0`](https://github.com/steven201nmk/devops-intern-final/tree/v1.0.0) |
 | **Container image** | [`ghcr.io/steven201nmk/devops-intern-final/nginx-app`](https://github.com/steven201nmk/devops-intern-final/pkgs/container/devops-intern-final%2Fnginx-app) |
 
@@ -175,11 +175,32 @@ git tag -a v1.0.0 -m "v1.0.0: final submission"
 git push origin v1.0.0
 ```
 
-**Observed output:** `git log --oneline --graph --decorate -20`
+**Observed output:** `git log --oneline --graph --decorate -20 main feature/docs-evidence` (taken while the second PR was being prepared)
 
 ```text
-TODO: paste output
+* 84cc347 (feature/docs-evidence) fix(monitoring): keep only access-log lines in the pattern-based LogQL queries
+* b0007c8 fix(nomad): compare app_tag as a string in its validation rule
+* 0034490 docs: add observed output for prerequisites, Tasks 2-4 and screenshots
+*   919ac5e (origin/main, main) Merge pull request #1 from steven201nmk/feature/fix-pipeline
+|\
+| * 84ca006 (origin/feature/fix-pipeline) docs: add README with architecture, quick start and per-task evidence sections
+| * da709b8 feat(monitoring): label logs by job/service/stream and fix the LogQL queries
+| * 3373a31 fix(nomad): deploy the CI image by commit SHA and label containers for Promtail
+| * d29f8da ci: add hadolint, pass BUILD_SHA, gate on healthcheck.sh, tag images by SHA
+| * 6f54045 fix(app): drop debug build step and return plain-text /healthz
+| * d9c6a2c fix(scripts): use bash strict mode, assert HTTP 200 exactly, mark executable
+| * 1ede25d fix: remove UTF-8 BOM from Dockerfile, HTML and config files
+| * 25ea9d9 chore: enforce LF line endings and ignore local tool binaries
+|/
+* 6bb9f65 index.html
+* 80cc8e8 nginx-app.nomad.hcl
+* 4cb6ba4 Update ci.yml
+* 3676d99 Update ci.yml
+* 998c660 Update Dockerfile
+* 67fc5d9 Fix nginx non-root configuration
 ```
+
+The early commits (`Update ci.yml`, `index.html`, ...) were made in the GitHub web editor before I adopted Conventional Commits. Everything from `25ea9d9` onwards follows the convention and went through a pull request.
 
 ---
 
@@ -409,11 +430,19 @@ healthy
 - Published image tags: `919ac5e323e691915bc3b8b0dcb9627f45012ee5` (the merge commit) and `latest`
 
 ```bash
-docker pull ghcr.io/steven201nmk/devops-intern-final/nginx-app:<git-sha>
+export SHA="$(git rev-parse origin/main)"
+docker pull ghcr.io/steven201nmk/devops-intern-final/nginx-app:$SHA
 ```
 
 ```text
-TODO: paste output
+$ export SHA="$(git rev-parse origin/main)"; echo "$SHA"
+919ac5e323e691915bc3b8b0dcb9627f45012ee5
+
+$ docker pull ghcr.io/steven201nmk/devops-intern-final/nginx-app:$SHA
+919ac5e323e691915bc3b8b0dcb9627f45012ee5: Pulling from steven201nmk/devops-intern-final/nginx-app
+Digest: sha256:52b9b3f27301dcaae6b0270a11cdc0197dfbe889268d6722ca5208a41f80dbae
+Status: Image is up to date for ghcr.io/steven201nmk/devops-intern-final/nginx-app:919ac5e323e691915bc3b8b0dcb9627f45012ee5
+ghcr.io/steven201nmk/devops-intern-final/nginx-app:919ac5e323e691915bc3b8b0dcb9627f45012ee5
 ```
 
 ![Green CI pipeline on main](docs/screenshots/ci-green.png)
@@ -444,32 +473,218 @@ consul agent -dev
 sudo nomad agent -dev        # root is needed for the docker driver on Linux
 ```
 
+Then, in a third terminal, check that both agents are up:
+
+```bash
+consul members
+nomad node status
+```
+
+```text
+$ consul members
+Node    Address         Status  Type    Build  Protocol  DC   Partition  Segment
+Steven  127.0.0.1:8301  alive   server  2.0.4  2         dc1  default    <all>
+
+$ nomad node status
+ID        Node Pool  DC   Name    Class   Drain  Eligibility  Status
+260a949e  default    dc1  Steven  <none>  false  eligible     ready
+```
+
 **Validate, plan, run and check status**
 
 ```bash
-export SHA="$(git rev-parse HEAD)"     # full 40-character SHA, the same tag CI pushed
+export SHA="$(git rev-parse origin/main)"   # full 40-character SHA of a commit CI has published
 
-nomad job validate -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
-nomad job plan     -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
-nomad job run      -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
+nomad job validate -var "app_tag=$SHA"   nomad/nginx-app.nomad.hcl
+nomad job validate -var "app_tag=latest" nomad/nginx-app.nomad.hcl   # must be rejected
+nomad job plan     -var "app_tag=$SHA"   nomad/nginx-app.nomad.hcl
+nomad job run      -var "app_tag=$SHA"   nomad/nginx-app.nomad.hcl
 nomad job status nginx-app
 ```
 
 ```text
-TODO: paste output of each command
+$ nomad job validate -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
+Job Warnings:
+1 warning:
+
+* group "web" defines services, but neither the group nor any of its tasks have shutdown_delay set
+
+Job validation successful
+
+$ nomad job validate -var "app_tag=latest" nomad/nginx-app.nomad.hcl   # expected to be rejected
+Error getting job struct: Error parsing job file from nomad/nginx-app.nomad.hcl:
+:0,0-0: Invalid value for cmd variable; Deploy an immutable commit-SHA tag, not "latest".
+
+This was checked by the validation rule at nginx-app.nomad.hcl:11,3-13.
+
+$ nomad job plan -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
++ Job: "nginx-app"
++ Task Group: "web" (1 create)
+  + Task: "nginx" (forces create)
+
+Scheduler dry-run:
+- All tasks successfully allocated.
+
+Job Warnings:
+1 warning:
+
+* group "web" defines services, but neither the group nor any of its tasks have shutdown_delay set
+(... check-index hint trimmed ...)
+
+$ nomad job run -var "app_tag=$SHA" nomad/nginx-app.nomad.hcl
+Job Warnings:
+1 warning:
+
+* group "web" defines services, but neither the group nor any of its tasks have shutdown_delay set
+==> View this job in the Web UI: http://127.0.0.1:4646/ui/jobs/nginx-app@default
+
+==> 2026-10-07T13:44:41+08:00: Monitoring evaluation "302552a1"
+    2026-10-07T13:44:41+08:00: Evaluation triggered by job "nginx-app"
+    2026-10-07T13:44:41+08:00: Evaluation within deployment: "4bdac061"
+    2026-10-07T13:44:41+08:00: Allocation "07e9b12d" created: node "260a949e", group "web"
+    2026-10-07T13:44:41+08:00: Evaluation status changed: "pending" -> "complete"
+==> 2026-10-07T13:44:41+08:00: Evaluation "302552a1" finished with status "complete"
+==> 2026-10-07T13:44:41+08:00: Monitoring deployment "4bdac061"
+    
+2026-10-07T13:44:41+08:00
+ID          = 4bdac061
+Job ID      = nginx-app
+Job Version = 0
+Status      = running
+Description = Deployment is running
+
+Deployed
+Task Group  Auto Revert  Desired  Placed  Healthy  Unhealthy  Progress Deadline
+web         true         1        1       0        0          2026-10-07T13:54:41+08:00
+    
+2026-10-07T13:44:55+08:00
+ID          = 4bdac061
+Job ID      = nginx-app
+Job Version = 0
+Status      = running
+Description = Deployment is running
+
+Deployed
+Task Group  Auto Revert  Desired  Placed  Healthy  Unhealthy  Progress Deadline
+web         true         1        1       1        0          2026-10-07T13:54:55+08:00
+    
+2026-10-07T13:44:56+08:00
+ID          = 4bdac061
+Job ID      = nginx-app
+Job Version = 0
+Status      = successful
+Description = Deployment completed successfully
+
+Deployed
+Task Group  Auto Revert  Desired  Placed  Healthy  Unhealthy  Progress Deadline
+web         true         1        1       1        0          2026-10-07T13:54:55+08:00
+
+$ nomad job status nginx-app
+ID            = nginx-app
+Name          = nginx-app
+Submit Date   = 2026-10-07T13:44:41+08:00
+Type          = service
+Priority      = 50
+Datacenters   = dc1
+Namespace     = default
+Node Pool     = default
+Status        = running
+Periodic      = false
+Parameterized = false
+
+Summary
+Task Group  Queued  Starting  Running  Failed  Complete  Lost  Unknown
+web         0       0         1        0       0         0     0
+
+Latest Deployment
+ID          = 4bdac061
+Status      = successful
+Description = Deployment completed successfully
+
+Deployed
+Task Group  Auto Revert  Desired  Placed  Healthy  Unhealthy  Progress Deadline
+web         true         1        1       1        0          2026-10-07T13:54:55+08:00
+
+Allocations
+ID        Node ID   Task Group  Version  Desired  Status   Created  Modified
+07e9b12d  260a949e  web         0        run      running  15s ago  2s ago
 ```
+
+`nomad job run` watched the rolling deployment until it reported `successful`: 1 placed, 1 healthy, auto-revert enabled. The `latest` tag is rejected by the variable's validation rule before Nomad schedules anything.
+
+About the warning: Nomad 2.0 suggests a `shutdown_delay` for groups with services, so that Consul deregisters an instance before it stops during a rolling update. With a single instance there is nowhere else to send traffic, so I left it out. See Known Limitations.
 
 **Allocation health and Consul check**
 
 ```bash
-nomad alloc status <alloc-id>                           # shows the dynamic port for "http"
-curl -i http://127.0.0.1:<dynamic-port>/healthz
-curl -s http://127.0.0.1:8500/v1/health/checks/nginx-app
+nomad alloc status <alloc-id>                                       # shows the dynamic port for "http"
+docker ps --filter label=job=nginx-app
+curl -s http://127.0.0.1:8500/v1/catalog/service/nginx-app          # Consul service registration
+curl -si http://127.0.0.1:<dynamic-port>/healthz
+curl -s http://127.0.0.1:8500/v1/health/checks/nginx-app            # Consul health check
 ```
 
 ```text
-TODO: paste output
+$ nomad alloc status $ALLOC
+ID                  = 07e9b12d-d3ef-1ff1-2791-6d0fd2c372bc
+Eval ID             = 302552a1
+Name                = nginx-app.web[0]
+Node ID             = 260a949e
+Node Name           = Steven
+Job ID              = nginx-app
+Job Version         = 0
+Client Status       = running
+Client Description  = Tasks are running
+Desired Status      = run
+Desired Description = <none>
+Created             = 15s ago
+Modified            = 2s ago
+Deployment ID       = 4bdac061
+Deployment Health   = healthy
+
+Allocation Addresses:
+Label  Dynamic  Address
+*http  yes      127.0.0.1:20224 -> 8080
+
+Task "nginx" is "running"
+Task Resources:
+CPU        Memory         Disk     Addresses
+0/100 MHz  12 MiB/64 MiB  300 MiB  
+
+Task Events:
+Started At     = 2026-10-07T05:44:42Z
+Finished At    = N/A
+Total Restarts = 0
+Last Restart   = N/A
+
+Recent Events:
+Time                       Type        Description
+2026-10-07T13:44:42+08:00  Started     Task started by client
+2026-10-07T13:44:41+08:00  Task Setup  Building Task Directory
+2026-10-07T13:44:41+08:00  Received    Task received by client
+
+$ docker ps --filter label=job=nginx-app --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}'
+NAMES                                        IMAGE                                                                                         PORTS                                                  STATUS
+nginx-07e9b12d-d3ef-1ff1-2791-6d0fd2c372bc   ghcr.io/steven201nmk/devops-intern-final/nginx-app:919ac5e323e691915bc3b8b0dcb9627f45012ee5   127.0.0.1:20224->8080/tcp, 127.0.0.1:20224->8080/udp   Up 15 seconds (healthy)
+
+$ curl -s http://127.0.0.1:8500/v1/catalog/service/nginx-app | python3 -c 'import json,sys; s=json.load(sys.stdin)[0]; print("service:", s["ServiceName"], "| address:", s["ServiceAddress"]+":"+str(s["ServicePort"]), "| tags:", s["ServiceTags"])'
+service: nginx-app | address: 127.0.0.1:20224 | tags: ['web', 'nginx']
+
+$ curl -si http://127.0.0.1:20224/healthz
+HTTP/1.1 200 OK
+Server: nginx/1.27.5
+Date: Wed, 07 Oct 2026 05:44:57 GMT
+Content-Type: text/plain
+Content-Length: 3
+Connection: keep-alive
+
+OK
+
+$ curl -s http://127.0.0.1:8500/v1/health/checks/nginx-app | python3 -c 'import json,sys; [print(c["Name"], "->", c["Status"], "|", c["Output"].strip()) for c in json.load(sys.stdin)]'
+nginx-healthz -> passing | HTTP GET http://127.0.0.1:20224/healthz: 200 OK Output: OK
 ```
+
+The allocation uses 12 MiB of its 64 MiB memory limit. Nomad gave it the dynamic host port `20224`, mapped to the container's `8080`, and Consul's `nginx-healthz` check against `/healthz` is `passing`.
 
 ![Nomad UI showing the nginx-app allocation healthy](docs/screenshots/nomad-job-healthy.png)
 
@@ -487,10 +702,28 @@ Full notes, including the problems I hit, are in [`monitoring/loki_setup.md`](mo
 cd monitoring
 docker compose up -d
 docker compose ps
+curl -s http://localhost:3100/ready
 ```
 
 ```text
-TODO: paste output
+$ cd monitoring && docker compose up -d
+ Network monitoring_monitoring Created
+ Container monitoring-loki-1 Created
+ Container monitoring-promtail-1 Created
+ Container monitoring-grafana-1 Created
+ Container monitoring-loki-1 Started
+ Container monitoring-promtail-1 Started
+ Container monitoring-grafana-1 Started
+(image pull progress omitted)
+
+$ docker compose ps
+SERVICE    IMAGE                    STATUS          PORTS
+grafana    grafana/grafana:10.4.0   Up 10 minutes   0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+loki       grafana/loki:3.0.0       Up 10 minutes   0.0.0.0:3100->3100/tcp, [::]:3100->3100/tcp
+promtail   grafana/promtail:3.0.0   Up 10 minutes   
+
+$ curl -s http://localhost:3100/ready
+ready
 ```
 
 **Labels applied by Promtail** (Docker service discovery through `/var/run/docker.sock`)
@@ -506,17 +739,39 @@ TODO: paste output
 **Generate traffic, including errors**
 
 ```bash
-PORT=<dynamic-port-from-task-5>
+PORT=20224   # the dynamic port from nomad alloc status
 for i in 1 2 3 4 5; do
-  curl -s -o /dev/null "http://127.0.0.1:$PORT/"
-  curl -s -o /dev/null "http://127.0.0.1:$PORT/does-not-exist"
-done
+  curl -s -o /dev/null -w '%{http_code} ' "http://127.0.0.1:$PORT/"
+  curl -s -o /dev/null -w '%{http_code} ' "http://127.0.0.1:$PORT/does-not-exist"
+done; echo
 curl -s http://localhost:3100/loki/api/v1/labels
+for l in job container nomad_alloc_id service stream; do curl -s http://localhost:3100/loki/api/v1/label/$l/values; echo; done
 ```
 
 ```text
-TODO: paste output
+$ for i in 1 2 3 4 5; do curl -s -o /dev/null -w '%{http_code} ' "http://127.0.0.1:$PORT/"; curl -s -o /dev/null -w '%{http_code} ' "http://127.0.0.1:$PORT/does-not-exist"; done; echo
+200 404 200 404 200 404 200 404 200 404 
+
+$ curl -s http://localhost:3100/loki/api/v1/labels
+{"status":"success","data":["container","job","nomad_alloc_id","service","service_name","stream"]}
+
+$ curl -s http://localhost:3100/loki/api/v1/label/job/values
+{"status":"success","data":["docker","nginx-app"]}
+
+$ curl -s http://localhost:3100/loki/api/v1/label/container/values
+{"status":"success","data":["monitoring-grafana-1","monitoring-loki-1","monitoring-promtail-1","nginx-07e9b12d-d3ef-1ff1-2791-6d0fd2c372bc","nginx-app"]}
+
+$ curl -s http://localhost:3100/loki/api/v1/label/nomad_alloc_id/values
+{"status":"success","data":["07e9b12d-d3ef-1ff1-2791-6d0fd2c372bc"]}
+
+$ curl -s http://localhost:3100/loki/api/v1/label/service/values
+{"status":"success","data":["grafana","loki","nginx-app","promtail"]}
+
+$ curl -s http://localhost:3100/loki/api/v1/label/stream/values
+{"status":"success","data":["stderr","stdout"]}
 ```
+
+`job="nginx-app"`, `service="nginx-app"` and `nomad_alloc_id="07e9b12d-..."` come from the Nomad-deployed container. `job="docker"` belongs to the containers without a `job` label (the monitoring stack itself and the earlier `docker run` container). `service_name` is added by Loki 3 automatically.
 
 **Grafana**
 
@@ -548,7 +803,25 @@ sum by (status) (
 
 **Results**
 
-TODO: describe what each query returned. For example: Q2 and Q3 returned only the 5 `GET /does-not-exist HTTP/1.1" 404` lines, and Q4 showed `200` → 5 and `404` → 5.
+I sent two rounds of traffic (5 × `/` and 5 × `/does-not-exist` each, at 13:50 and 14:00 local time) and ran the queries over the last 15 minutes:
+
+- **Q1** returned 20 lines: the 10 `200` and 10 `404` access-log lines. The container's start-up messages had already aged out of the 15-minute window.
+- **Q2** and **Q3** each returned only the 10 `GET /does-not-exist ... 404` lines. Q3 also exposes `method`, `path` and `status` as labels.
+- **Q4** counted `status="200"` → 10 and `status="404"` → 10.
+
+```text
+Q2  {job="nginx-app", stream="stdout"} |~ "\" [45][0-9]{2} "
+  172.17.0.1 - - [07/Oct/2026:05:50:43 +0000] "GET /does-not-exist HTTP/1.1" 404 153 "-" "curl/8.5.0"
+  ... (10 lines, every one a 404 for /does-not-exist)
+
+Q3  {job="nginx-app", stream="stdout"} |= "HTTP/" | pattern `...` | status != "200"
+  172.17.0.1 - - [07/Oct/2026:06:00:39 +0000] "GET /does-not-exist HTTP/1.1" 404 153 "-" "curl/8.5.0"
+  ... (10 lines, parsed labels: method="GET", path="/does-not-exist", status="404")
+
+Q4  sum by (status) (count_over_time(... [15m]))
+  {status="200"} -> 10
+  {status="404"} -> 10
+```
 
 ![Grafana Explore filtering NGINX access logs for non-200 responses](docs/screenshots/grafana-explore.png)
 
@@ -560,25 +833,25 @@ These are failures I actually hit while building this project, in the order they
 
 ### 1. CI could not find the ShellCheck action
 
-- **Symptom:** TODO: paste the exact error from the failed run
+- **Symptom:** The `lint` job failed at the ShellCheck step, even after my first attempt to correct the action name ([failed run for `19a873b`](https://github.com/steven201nmk/devops-intern-final/actions/runs/35334192276)).
 - **Cause:** The action referenced in `ci.yml` was not a valid, resolvable repository.
 - **Fix:** ShellCheck is preinstalled on GitHub's Ubuntu runners, so the lint job now calls `shellcheck scripts/*.sh` directly. See commits [`19a873b`](https://github.com/steven201nmk/devops-intern-final/commit/19a873b) and [`ee60dad`](https://github.com/steven201nmk/devops-intern-final/commit/ee60dad).
 
 ### 2. Windows line endings (CRLF) broke the shell scripts
 
-- **Symptom:** TODO: paste the error, for example ShellCheck `SC1017` (literal carriage return) or `/bin/sh^M: bad interpreter`
+- **Symptom:** After I edited the scripts on Windows, ShellCheck flagged them. The warnings came from the carriage return (`\r`) at the end of every line, which also stops a script from running under Linux.
 - **Cause:** The scripts were saved on Windows with CRLF line endings. Linux shells treat the `\r` as part of each command.
 - **Fix:** Converted the scripts to LF. Adding a `.gitattributes` with `*.sh text eol=lf` stops it from happening again. See commits [`ca417af`](https://github.com/steven201nmk/devops-intern-final/commit/ca417af) and [`80ac98d`](https://github.com/steven201nmk/devops-intern-final/commit/80ac98d).
 
 ### 3. UTF-8 BOM in `nginx.conf` stopped NGINX from starting
 
-- **Symptom:** TODO: paste the `nginx: [emerg] ...` error from `docker logs`
+- **Symptom:** NGINX rejected `nginx.conf` on its very first line, even though the line looked correct in the editor. It took three commits to track down.
 - **Cause:** The Windows editor saved the file as "UTF-8 with BOM". The invisible bytes `EF BB BF` before the first directive made NGINX reject the first line.
 - **Fix:** Re-saved the file as UTF-8 without a BOM. Check for it with `head -c 3 app/nginx.conf | xxd`. See commits [`a0a62e3`](https://github.com/steven201nmk/devops-intern-final/commit/a0a62e3), [`3c839f0`](https://github.com/steven201nmk/devops-intern-final/commit/3c839f0) and [`45e2138`](https://github.com/steven201nmk/devops-intern-final/commit/45e2138).
 
 ### 4. NGINX failed when running as a non-root user
 
-- **Symptom:** TODO: paste the error, for example `open() "/var/run/nginx.pid" failed (13: Permission denied)`
+- **Symptom:** After adding `USER nginx` to the Dockerfile, the container stopped serving traffic in the CI test job until the PID and temp paths, the listen port and the directory permissions were all fixed.
 - **Cause:** By default NGINX writes its PID file and temp files to root-owned paths and listens on port 80, which a non-root user cannot bind.
 - **Fix:** Moved `pid` and every `*_temp_path` to `/tmp`, set `listen 8080`, and `chown`ed the cache and log directories to `nginx`. Updated the CI test job to map port `8080:8080`. See commits [`1a8fb67`](https://github.com/steven201nmk/devops-intern-final/commit/1a8fb67), [`67fc5d9`](https://github.com/steven201nmk/devops-intern-final/commit/67fc5d9) and [`998c660`](https://github.com/steven201nmk/devops-intern-final/commit/998c660).
 
@@ -591,6 +864,22 @@ These are failures I actually hit while building this project, in the order they
   Then `curl` and `healthcheck.sh` reported the app as unreachable (exit code `2`).
 - **Cause:** Docker Desktop publishes container ports on the Windows host, and something on Windows was already listening on 8080. `netstat -ano | findstr :8080` pointed to PID 6000. `Get-CimInstance Win32_Service -Filter "ProcessId=6000"` showed it was **MTAgentService**, the background agent of the MiniTool ShadowMaker backup tool.
 - **Fix:** Stopped the service while testing (`Set-Service MTAgentService -StartupType Disabled; Stop-Service MTAgentService`) and re-enabled it afterwards. CI and Nomad were never affected: the CI runner has nothing on 8080, and Nomad uses a dynamically allocated host port.
+
+### 6. `nomad job validate` rejected my own validation rule
+
+- **Symptom:**
+  ```text
+  Error getting job struct: Error parsing job file from nomad/nginx-app.nomad.hcl:
+  nginx-app.nomad.hcl:12,48-55: Error in function call; Call to function "length" failed: collection must be a list, a map or a tuple.
+  ```
+- **Cause:** I had written `length(var.app_tag) > 0` to reject an empty tag. In Nomad's HCL, `length()` only accepts lists, maps and tuples, not strings.
+- **Fix:** Compared the string directly (`var.app_tag != ""`). See commit `b0007c8`. The rule still rejects `latest`, as the Task 5 output shows.
+
+### 7. The LogQL status query also returned NGINX's start-up lines
+
+- **Symptom:** Q3 (`| pattern ... | status != "200"`) returned 14 lines instead of 5, and Q4 showed an extra group `{} -> 9`. The extra lines were `/docker-entrypoint.sh: ...` messages.
+- **Cause:** The official nginx image prints its entrypoint messages to stdout. Those lines don't match the access-log pattern, so their `status` label is empty, and an empty string is `!= "200"`.
+- **Fix:** Added a line filter `|= "HTTP/"` before the `pattern` stage, so only access-log lines are parsed. See commit `84cc347`.
 
 ---
 
@@ -607,4 +896,5 @@ These parts of the submission are not production-ready:
 - **Deployment is manual.** CI publishes the image, but the Nomad job is run by hand. Next steps would be a deploy job, or a `nomad-pack`/Terraform workflow.
 - **`latest` is still published.** It is kept only for convenience. Deployments always use the immutable SHA tag.
 
-TODO: add anything else you know is weak in your submission.
+- **No `shutdown_delay`, single instance.** `count = 1`, so a rolling update briefly has no healthy instance, and Nomad warns that no `shutdown_delay` is set. With more time I would run `count = 2` and add `shutdown_delay = "5s"` so Consul stops routing to an instance before it is stopped.
+- **Nomad runs with `sudo`.** The dev agent needs root for the docker driver. A real client would run Nomad as a system service with a restricted Docker socket.
