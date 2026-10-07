@@ -1,32 +1,43 @@
-﻿version: "3.8"
+# Log aggregation stack: Loki (storage + query), Promtail (log shipper), Grafana (UI).
+#
+#   cd monitoring && docker compose up -d
+#
+# Loki:    http://localhost:3100   (ready check: /ready)
+# Grafana: http://localhost:3000   (add data source: Loki, URL http://loki:3100)
+
 services:
   loki:
     image: grafana/loki:3.0.0
+    command: -config.file=/etc/loki/loki-config.yaml
     ports:
       - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - ./loki-config.yaml:/etc/loki/local-config.yaml
+      - ./loki-config.yaml:/etc/loki/loki-config.yaml:ro
     networks:
       - monitoring
 
   promtail:
     image: grafana/promtail:3.0.0
+    command: -config.file=/etc/promtail/promtail-config.yaml
     volumes:
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      # Docker API access, used for container discovery and to read logs
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./promtail-config.yaml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     networks:
       - monitoring
 
   grafana:
     image: grafana/grafana:10.4.0
     environment:
+      # Local demo only: no login. See "Known Limitations" in the README.
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     ports:
       - "3000:3000"
+    depends_on:
+      - loki
     networks:
       - monitoring
 
